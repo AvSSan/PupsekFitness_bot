@@ -21,13 +21,13 @@ def format_nutrition(value: Nutrition) -> str:
 
 
 def format_summary(summary: DailySummary) -> str:
-    lines = [f"📊 За сегодня уже набралось:\n{format_nutrition(summary.total)}"]
+    lines = [f"📊 За активный день ({summary.day.isoformat()}) уже набралось:\n{format_nutrition(summary.total)}"]
     if summary.target is None or summary.remaining is None:
         lines.append("⚙️ Чтобы я считал остаток на день, заполните нормы через кнопку Настройки.")
         return "\n".join(lines)
 
     lines.append(f"🎯 Дневная цель:\n{format_nutrition(summary.target)}")
-    lines.append(f"✅ Осталось на сегодня:\n{format_nutrition(summary.remaining)}")
+    lines.append(f"✅ Осталось на этот день:\n{format_nutrition(summary.remaining)}")
     return "\n".join(lines)
 
 

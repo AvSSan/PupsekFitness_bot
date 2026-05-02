@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import sqlite3
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Iterable
 
@@ -59,12 +59,62 @@ class Storage:
                 updated_at TEXT NOT NULL
             );
 
+            CREATE TABLE IF NOT EXISTS user_day_state (
+                user_id INTEGER PRIMARY KEY REFERENCES users(telegram_id) ON DELETE CASCADE,
+                active_date TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+
             CREATE INDEX IF NOT EXISTS idx_meal_entries_user_date
                 ON meal_entries(user_id, entry_date);
             """
         )
         self._ensure_column("meal_entries", "description", "TEXT NOT NULL DEFAULT ''")
         self._connection.commit()
+
+    def get_active_date(self, user_id: int, default_date: date, now: datetime) -> date:
+        row = self._connection.execute(
+            "SELECT active_date FROM user_day_state WHERE user_id = ?",
+            (user_id,),
+        ).fetchone()
+        if row is not None:
+            return date.fromisoformat(str(row["active_date"]))
+
+        active_date = self._initial_active_date(user_id, default_date)
+        self._connection.execute(
+            """
+            INSERT INTO user_day_state (user_id, active_date, updated_at)
+            VALUES (?, ?, ?)
+            """,
+            (user_id, active_date.isoformat(), to_iso(now)),
+        )
+        self._connection.commit()
+        return active_date
+
+    def advance_active_date(self, user_id: int, default_date: date, now: datetime) -> date:
+        current_date = self.get_active_date(user_id, default_date, now)
+        next_date = current_date + timedelta(days=1)
+        self._connection.execute(
+            """
+            INSERT INTO user_day_state (user_id, active_date, updated_at)
+            VALUES (?, ?, ?)
+            ON CONFLICT(user_id) DO UPDATE SET
+                active_date = excluded.active_date,
+                updated_at = excluded.updated_at
+            """,
+            (user_id, next_date.isoformat(), to_iso(now)),
+        )
+        self._connection.commit()
+        return next_date
+
+    def _initial_active_date(self, user_id: int, default_date: date) -> date:
+        row = self._connection.execute(
+            "SELECT MAX(entry_date) AS latest_entry_date FROM meal_entries WHERE user_id = ?",
+            (user_id,),
+        ).fetchone()
+        if row is not None and row["latest_entry_date"]:
+            return date.fromisoformat(str(row["latest_entry_date"]))
+        return default_date
 
     def _ensure_column(self, table_name: str, column_name: str, definition: str) -> None:
         rows = self._connection.execute(f"PRAGMA table_info({table_name})").fetchall()
